@@ -21,7 +21,7 @@ st.set_page_config(
 with open("brand_codes.json", "r", encoding="utf-8") as f:
     BRAND_CODES = json.load(f)
 
-with open("Subbrands.json", "r", encoding="utf-8") as f:
+with open("subbrands.json", "r", encoding="utf-8") as f:
     SUBBRANDS = json.load(f)
 
 # ----------------------------------
