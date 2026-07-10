@@ -1,15 +1,65 @@
 import streamlit as st
 import pandas as pd
+import json
+import re
+import random
+
 from sku_generator import generate_sku
 
 # ----------------------------------
 # PAGE CONFIG
 # ----------------------------------
 st.set_page_config(
-    page_title="SKU Generator",
+    page_title="Beauty Queens SKU Generator",
     page_icon="🏷️",
     layout="wide"
 )
+
+# ----------------------------------
+# LOAD JSON FILES
+# ----------------------------------
+with open("brand_codes.json", "r", encoding="utf-8") as f:
+    BRAND_CODES = json.load(f)
+
+with open("SUBBRANDS.json", "r", encoding="utf-8") as f:
+    SUBBRANDS = json.load(f)
+
+# ----------------------------------
+# HELPERS
+# ----------------------------------
+def create_subbrand_code(name):
+
+    words = re.findall(
+        r"[A-Za-z0-9]+",
+        str(name).upper()
+    )
+
+    if not words:
+        return "GEN"
+
+    if len(words) >= 2:
+        return (
+            words[0][:2] +
+            words[1][:1]
+        )[:3]
+
+    return words[0][:3]
+
+
+def generate_unique_number(used_numbers):
+
+    while True:
+
+        number = random.randint(
+            1000,
+            9999
+        )
+
+        if number not in used_numbers:
+
+            used_numbers.add(number)
+
+            return str(number)
 
 # ----------------------------------
 # CUSTOM CSS
@@ -37,29 +87,6 @@ st.markdown("""
     text-align:center;
 }
 
-.stButton>button {
-    width:100%;
-    height:55px;
-    border-radius:12px;
-    border:none;
-    font-weight:600;
-    font-size:16px;
-}
-
-.stDownloadButton>button {
-    width:100%;
-    height:55px;
-    border-radius:12px;
-    font-weight:600;
-}
-
-.upload-box {
-    background:white;
-    padding:20px;
-    border-radius:15px;
-    box-shadow:0 3px 15px rgba(0,0,0,0.07);
-}
-
 .footer {
     text-align:center;
     color:#777;
@@ -74,10 +101,10 @@ st.markdown("""
 # ----------------------------------
 st.markdown("""
 <div class="hero">
-    <h1>🏷️ Shopify SKU Generator</h1>
+    <h1>🏷️ Beauty Queens SKU Generator</h1>
     <p>
-        Automatically generate unique Shopify SKUs using
-        Brand Codes + Sub Brand Detection + Unique Number Logic.
+        Generate Shopify-ready SKUs using Brand Codes,
+        Sub Brand Detection and Unique Numbers.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -111,12 +138,52 @@ with col3:
     </div>
     """, unsafe_allow_html=True)
 
-st.markdown("<br>", unsafe_allow_html=True)
+# ----------------------------------
+# SKU MODE
+# ----------------------------------
+st.markdown("## SKU Configuration")
+
+mode = st.radio(
+    "Generation Mode",
+    [
+        "Auto Detect",
+        "Manual Brand Selection"
+    ],
+    horizontal=True
+)
+
+selected_brand = None
+selected_subbrand = None
+
+if mode == "Manual Brand Selection":
+
+    col1, col2 = st.columns(2)
+
+    with col1:
+
+        selected_brand = st.selectbox(
+            "Select Brand",
+            sorted(SUBBRANDS.keys())
+        )
+
+    with col2:
+
+        selected_subbrand = st.selectbox(
+            "Select Sub Brand",
+            SUBBRANDS.get(
+                selected_brand,
+                []
+            )
+        )
+
+    st.success(
+        f"Selected Brand: {selected_brand} | Selected Sub Brand: {selected_subbrand}"
+    )
 
 # ----------------------------------
 # FILE UPLOAD
 # ----------------------------------
-st.markdown("### Upload Shopify CSV")
+st.markdown("## Upload Shopify CSV")
 
 uploaded_file = st.file_uploader(
     "Choose CSV File",
@@ -124,21 +191,27 @@ uploaded_file = st.file_uploader(
 )
 
 # ----------------------------------
-# PROCESS
+# PROCESS CSV
 # ----------------------------------
 if uploaded_file:
 
     try:
 
-        df = pd.read_csv(uploaded_file)
+        try:
+            df = pd.read_csv(uploaded_file)
+        except:
+            df = pd.read_csv(
+                uploaded_file,
+                encoding="latin1"
+            )
 
         st.success("CSV uploaded successfully")
 
-        st.write("### Preview")
+        st.markdown("### CSV Preview")
 
         st.dataframe(
             df.head(),
-            use_container_width=True
+            width="stretch"
         )
 
         title_col = st.selectbox(
@@ -160,15 +233,36 @@ if uploaded_file:
 
             total = len(df)
 
-            for i, row in enumerate(df.iterrows()):
+            for i, (_, row_data) in enumerate(df.iterrows()):
 
-                _, row_data = row
+                if mode == "Manual Brand Selection":
 
-                sku = generate_sku(
-                    title=row_data[title_col],
-                    vendor=row_data[vendor_col],
-                    used_numbers=used_numbers
-                )
+                    brand_code = BRAND_CODES.get(
+                        selected_brand.upper(),
+                        selected_brand[:3].upper()
+                    )
+
+                    subbrand_code = create_subbrand_code(
+                        selected_subbrand
+                    )
+
+                    random_number = generate_unique_number(
+                        used_numbers
+                    )
+
+                    sku = (
+                        f"{brand_code}-"
+                        f"{subbrand_code}-"
+                        f"{random_number}"
+                    )
+
+                else:
+
+                    sku = generate_sku(
+                        title=row_data[title_col],
+                        vendor=row_data[vendor_col],
+                        used_numbers=used_numbers
+                    )
 
                 generated_skus.append(sku)
 
@@ -186,7 +280,7 @@ if uploaded_file:
 
             st.dataframe(
                 df,
-                use_container_width=True
+                width="stretch"
             )
 
             csv = df.to_csv(
@@ -194,7 +288,7 @@ if uploaded_file:
             ).encode("utf-8")
 
             st.download_button(
-                label="⬇ Download CSV",
+                label="⬇ Download Generated CSV",
                 data=csv,
                 file_name="generated_skus.csv",
                 mime="text/csv"
@@ -211,7 +305,6 @@ if uploaded_file:
 # ----------------------------------
 st.markdown("""
 <div class="footer">
-Built with Streamlit • Shopify SKU Automation Tool
+Built with Streamlit • Beauty Queens Cosmetics
 </div>
 """, unsafe_allow_html=True)
-
