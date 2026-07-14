@@ -1,78 +1,83 @@
-import json
-import random
-import re
+import pandas as pd
+import streamlit as st
 
-with open("brand_codes.json", "r", encoding="utf-8") as f:
-    BRAND_CODES = json.load(f)
+from sku_generator import (
+    BRAND_CODES,
+    SUBBRANDS,
+    SUBBRAND_CODES,
+    add_brand,
+    add_subbrand,
+    generate_sku,
+)
 
-with open("subbrands.json", "r", encoding="utf-8") as f:
-    SUBBRANDS = json.load(f)
+st.set_page_config(page_title="Beauty Queens SKU Generator", layout="wide")
 
-SUBBRAND_CODES = {}
+st.title("SKU Generator")
 
-for brand, values in SUBBRANDS.items():
-    for value in values:
+# ---------- manual brand / subbrand entry ----------
+with st.sidebar:
+    st.header("Add Brand / Sub-brand")
 
-        value = str(value).upper().strip()
+    with st.form("add_brand_form", clear_on_submit=True):
+        st.subheader("New Brand")
+        b_name = st.text_input("Brand name")
+        b_code = st.text_input("Brand code (optional, 3 chars)")
+        if st.form_submit_button("Add Brand"):
+            if b_name.strip():
+                code = add_brand(b_name, b_code or None)
+                st.success(f"{b_name.upper()} → {code}")
+            else:
+                st.error("Brand name required")
 
-        words = re.findall(r"[A-Z0-9]+", value)
+    with st.form("add_subbrand_form", clear_on_submit=True):
+        st.subheader("New Sub-brand")
+        s_brand = st.text_input("Belongs to brand")
+        s_name = st.text_input("Sub-brand name")
+        s_code = st.text_input("Sub-brand code (optional, 3 chars)")
+        if st.form_submit_button("Add Sub-brand"):
+            if s_brand.strip() and s_name.strip():
+                code = add_subbrand(s_brand, s_name, s_code or None)
+                st.success(f"{s_name.upper()} → {code}")
+            else:
+                st.error("Brand and sub-brand required")
 
-        if not words:
-            continue
+    with st.expander(f"Brands ({len(BRAND_CODES)})"):
+        st.json(BRAND_CODES)
+    with st.expander(f"Sub-brands ({len(SUBBRAND_CODES)})"):
+        st.json(SUBBRAND_CODES)
 
-        if len(words) >= 2:
-            code = words[0][:2] + words[1][:1]
-        else:
-            code = words[0][:3]
+# ---------- CSV processing ----------
+uploaded_file = st.file_uploader("Upload Shopify CSV", type=["csv"])
 
-        SUBBRAND_CODES[value] = code[:3]
+if uploaded_file:
+    df = pd.read_csv(uploaded_file)
 
+    if "Title" in df.columns:
+        df["Title"] = df["Title"].ffill()
+    if "Vendor" in df.columns:
+        df["Vendor"] = df["Vendor"].ffill()
 
-def detect_subbrand(title):
+    used_numbers = set()
+    generated_skus = []
+    progress = st.progress(0)
 
-    title = str(title).upper()
+    for i, row in df.iterrows():
+        sku = generate_sku(
+            title=str(row["Title"]),
+            vendor=str(row["Vendor"]),
+            used_numbers=used_numbers,
+        )
+        generated_skus.append(sku)
+        progress.progress((i + 1) / len(df))
 
-    best_match = None
-    longest = 0
+    df["Generated SKU"] = generated_skus
 
-    for subbrand in SUBBRAND_CODES:
+    st.success(f"{len(df)} SKUs Generated")
+    st.dataframe(df[["Title", "Vendor", "Generated SKU"]], use_container_width=True)
 
-        if subbrand in title:
-
-            if len(subbrand) > longest:
-                longest = len(subbrand)
-                best_match = subbrand
-
-    if best_match:
-        return SUBBRAND_CODES[best_match]
-
-    return "GEN"
-
-
-def generate_unique_number(used_numbers):
-
-    while True:
-
-        num = random.randint(1000, 9999)
-
-        if num not in used_numbers:
-            used_numbers.add(num)
-            return str(num)
-
-
-def generate_sku(title, vendor, used_numbers):
-
-    vendor = str(vendor).upper().strip()
-
-    brand_code = BRAND_CODES.get(
-        vendor,
-        vendor[:3]
+    st.download_button(
+        "Download CSV",
+        df.to_csv(index=False).encode(),
+        "sku_output.csv",
+        "text/csv",
     )
-
-    subbrand_code = detect_subbrand(title)
-
-    unique_number = generate_unique_number(
-        used_numbers
-    )
-
-    return f"{brand_code}-{subbrand_code}-{unique_number}"
