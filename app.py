@@ -1,10 +1,16 @@
 import streamlit as st
 import pandas as pd
-import json
-import re
-import random
 
-from sku_generator import generate_sku
+from sku_generator import (
+    BRAND_CODES,
+    SUBBRANDS,
+    SUBBRAND_CODES,
+    add_brand,
+    add_subbrand,
+    generate_sku,
+    generate_unique_number,
+    make_subbrand_code,
+)
 
 # ----------------------------------
 # PAGE CONFIG
@@ -14,52 +20,6 @@ st.set_page_config(
     page_icon="🏷️",
     layout="wide"
 )
-
-# ----------------------------------
-# LOAD JSON FILES
-# ----------------------------------
-with open("brand_codes.json", "r", encoding="utf-8") as f:
-    BRAND_CODES = json.load(f)
-
-with open("subbrands.json", "r", encoding="utf-8") as f:
-    SUBBRANDS = json.load(f)
-
-# ----------------------------------
-# HELPERS
-# ----------------------------------
-def create_subbrand_code(name):
-
-    words = re.findall(
-        r"[A-Za-z0-9]+",
-        str(name).upper()
-    )
-
-    if not words:
-        return "GEN"
-
-    if len(words) >= 2:
-        return (
-            words[0][:2] +
-            words[1][:1]
-        )[:3]
-
-    return words[0][:3]
-
-
-def generate_unique_number(used_numbers):
-
-    while True:
-
-        number = random.randint(
-            1000,
-            9999
-        )
-
-        if number not in used_numbers:
-
-            used_numbers.add(number)
-
-            return str(number)
 
 # ----------------------------------
 # CUSTOM CSS
@@ -95,6 +55,50 @@ st.markdown("""
 
 </style>
 """, unsafe_allow_html=True)
+
+# ----------------------------------
+# SIDEBAR — ADD BRAND / SUB BRAND
+# ----------------------------------
+with st.sidebar:
+
+    st.header("➕ Add Brand / Sub Brand")
+
+    with st.form("add_brand_form", clear_on_submit=True):
+
+        st.subheader("New Brand")
+
+        b_name = st.text_input("Brand name")
+        b_code = st.text_input("Brand code (optional, 3 chars)")
+
+        if st.form_submit_button("Add Brand"):
+
+            if b_name.strip():
+                code = add_brand(b_name, b_code or None)
+                st.success(f"{b_name.upper()} → {code}")
+            else:
+                st.error("Brand name required")
+
+    with st.form("add_subbrand_form", clear_on_submit=True):
+
+        st.subheader("New Sub Brand")
+
+        s_brand = st.text_input("Belongs to brand")
+        s_name = st.text_input("Sub brand name")
+        s_code = st.text_input("Sub brand code (optional, 3 chars)")
+
+        if st.form_submit_button("Add Sub Brand"):
+
+            if s_brand.strip() and s_name.strip():
+                code = add_subbrand(s_brand, s_name, s_code or None)
+                st.success(f"{s_name.upper()} → {code}")
+            else:
+                st.error("Brand and sub brand required")
+
+    with st.expander(f"Brands ({len(BRAND_CODES)})"):
+        st.json(BRAND_CODES)
+
+    with st.expander(f"Sub Brands ({len(SUBBRAND_CODES)})"):
+        st.json(SUBBRAND_CODES)
 
 # ----------------------------------
 # HEADER
@@ -157,28 +161,46 @@ selected_subbrand = None
 
 if mode == "Manual Brand Selection":
 
-    col1, col2 = st.columns(2)
+    brand_options = sorted(SUBBRANDS.keys())
 
-    with col1:
+    if not brand_options:
 
-        selected_brand = st.selectbox(
-            "Select Brand",
-            sorted(SUBBRANDS.keys())
+        st.warning(
+            "No brands available yet. Add one from the sidebar."
         )
 
-    with col2:
+    else:
 
-        selected_subbrand = st.selectbox(
-            "Select Sub Brand",
-            SUBBRANDS.get(
-                selected_brand,
-                []
+        col1, col2 = st.columns(2)
+
+        with col1:
+
+            selected_brand = st.selectbox(
+                "Select Brand",
+                brand_options
             )
-        )
 
-    st.success(
-        f"Selected Brand: {selected_brand} | Selected Sub Brand: {selected_subbrand}"
-    )
+        with col2:
+
+            selected_subbrand = st.selectbox(
+                "Select Sub Brand",
+                SUBBRANDS.get(
+                    selected_brand,
+                    []
+                )
+            )
+
+        if selected_subbrand:
+
+            st.success(
+                f"Selected Brand: {selected_brand} | Selected Sub Brand: {selected_subbrand}"
+            )
+
+        else:
+
+            st.warning(
+                f"{selected_brand} has no sub brands yet. Add one from the sidebar."
+            )
 
 # ----------------------------------
 # FILE UPLOAD
@@ -199,7 +221,8 @@ if uploaded_file:
 
         try:
             df = pd.read_csv(uploaded_file)
-        except:
+        except Exception:
+            uploaded_file.seek(0)
             df = pd.read_csv(
                 uploaded_file,
                 encoding="latin1"
@@ -238,12 +261,13 @@ if uploaded_file:
                 if mode == "Manual Brand Selection":
 
                     brand_code = BRAND_CODES.get(
-                        selected_brand.upper(),
-                        selected_brand[:3].upper()
+                        str(selected_brand).upper(),
+                        str(selected_brand)[:3].upper()
                     )
 
-                    subbrand_code = create_subbrand_code(
-                        selected_subbrand
+                    subbrand_code = SUBBRAND_CODES.get(
+                        str(selected_subbrand).upper().strip(),
+                        make_subbrand_code(selected_subbrand) or "GEN"
                     )
 
                     random_number = generate_unique_number(
