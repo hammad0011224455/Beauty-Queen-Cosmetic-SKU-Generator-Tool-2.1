@@ -8,8 +8,10 @@ from sku_generator import (
     add_brand,
     add_subbrand,
     generate_sku,
-    generate_unique_number,
     make_subbrand_code,
+    next_sequence_number,
+    peek_counter,
+    save_counter,
 )
 
 # ----------------------------------
@@ -100,6 +102,9 @@ with st.sidebar:
     with st.expander(f"Sub Brands ({len(SUBBRAND_CODES)})"):
         st.json(SUBBRAND_CODES)
 
+    st.divider()
+    st.caption(f"Last SKU number issued: {str(peek_counter()).zfill(4)}")
+
 # ----------------------------------
 # HEADER
 # ----------------------------------
@@ -108,7 +113,7 @@ st.markdown("""
     <h1>🏷️ Beauty Queens SKU Generator</h1>
     <p>
         Generate Shopify-ready SKUs using Brand Codes,
-        Sub Brand Detection and Unique Numbers.
+        Sub Brand Detection and Sequential Numbers.
     </p>
 </div>
 """, unsafe_allow_html=True)
@@ -251,7 +256,6 @@ if uploaded_file:
 
             progress = st.progress(0)
 
-            used_numbers = set()
             generated_skus = []
 
             total = len(df)
@@ -270,22 +274,19 @@ if uploaded_file:
                         make_subbrand_code(selected_subbrand) or "GEN"
                     )
 
-                    random_number = generate_unique_number(
-                        used_numbers
-                    )
+                    sequence_number = next_sequence_number()
 
                     sku = (
                         f"{brand_code}-"
                         f"{subbrand_code}-"
-                        f"{random_number}"
+                        f"{sequence_number}"
                     )
 
                 else:
 
                     sku = generate_sku(
                         title=row_data[title_col],
-                        vendor=row_data[vendor_col],
-                        used_numbers=used_numbers
+                        vendor=row_data[vendor_col]
                     )
 
                 generated_skus.append(sku)
@@ -294,10 +295,13 @@ if uploaded_file:
                     (i + 1) / total
                 )
 
-            df["Generated SKU"] = generated_skus
+            save_counter()
+
+            df["Variant SKU"] = generated_skus
 
             st.success(
-                f"{len(df)} SKUs Generated Successfully"
+                f"{len(df)} SKUs Generated Successfully "
+                f"(up to {str(peek_counter()).zfill(4)})"
             )
 
             st.markdown("### Generated Results")

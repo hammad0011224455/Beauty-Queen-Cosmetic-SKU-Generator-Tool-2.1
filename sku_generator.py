@@ -1,11 +1,13 @@
 import json
 import os
-import random
 import re
 
 BRAND_FILE = "brand_codes.json"
 SUBBRAND_FILE = "subbrands.json"
 OVERRIDE_FILE = "subbrand_overrides.json"
+COUNTER_FILE = "sku_counter.json"
+
+PAD = 4
 
 
 def load_json(path, default):
@@ -42,8 +44,49 @@ BRAND_CODES = load_json(BRAND_FILE, {})
 SUBBRANDS = load_json(SUBBRAND_FILE, {})
 SUBBRAND_OVERRIDES = load_json(OVERRIDE_FILE, {})
 
+_counter = load_json(COUNTER_FILE, {"last": 0})
+
+try:
+    LAST_NUMBER = int(_counter.get("last", 0))
+except (TypeError, ValueError):
+    LAST_NUMBER = 0
+
 SUBBRAND_CODES = {}
 
+
+# ----------------------------------
+# SEQUENTIAL NUMBERING
+# ----------------------------------
+
+def next_sequence_number():
+    """Next number in the global sequence. Never repeats."""
+    global LAST_NUMBER
+    LAST_NUMBER += 1
+    return str(LAST_NUMBER).zfill(PAD)
+
+
+def save_counter():
+    """Persist the counter to disk. Call once after a batch."""
+    save_json(COUNTER_FILE, {"last": LAST_NUMBER})
+
+
+def peek_counter():
+    """Last number issued, without consuming one."""
+    return LAST_NUMBER
+
+
+def reset_counter(value=0, save=True):
+    """Set the sequence back to a given number."""
+    global LAST_NUMBER
+    LAST_NUMBER = int(value)
+    if save:
+        save_counter()
+    return LAST_NUMBER
+
+
+# ----------------------------------
+# BRAND / SUB BRAND CODES
+# ----------------------------------
 
 def make_subbrand_code(value):
     words = re.findall(r"[A-Z0-9]+", str(value).upper())
@@ -128,17 +171,12 @@ def detect_subbrand(title):
     return "GEN"
 
 
-def generate_unique_number(used_numbers):
-    while True:
-        num = random.randint(1000, 9999)
-        if num not in used_numbers:
-            used_numbers.add(num)
-            return str(num)
+# ----------------------------------
+# SKU
+# ----------------------------------
 
-
-def generate_sku(title, vendor, used_numbers):
+def generate_sku(title, vendor, used_numbers=None):
     vendor = str(vendor).upper().strip()
     brand_code = BRAND_CODES.get(vendor, vendor[:3])
     subbrand_code = detect_subbrand(title)
-    unique_number = generate_unique_number(used_numbers)
-    return f"{brand_code}-{subbrand_code}-{unique_number}"
+    return f"{brand_code}-{subbrand_code}-{next_sequence_number()}"
